@@ -4,7 +4,7 @@ import { Deployer } from "@matterlabs/hardhat-zksync-deploy";
 import * as fs from "fs";
 import { expect } from "chai";
 
-// era_test_node rich wallet (pre-funded)
+// Pre-funded era_test_node wallet.
 const RICH_PK = "0x7726827caac94a7f9e1b160f7ea819f172f7b6f9d2a97f992c38edeab82d4110";
 
 describe("InstanceManager (zkSync ERA)", function () {
@@ -22,7 +22,7 @@ describe("InstanceManager (zkSync ERA)", function () {
     const wallet   = new Wallet(RICH_PK, provider);
     const deployer = new Deployer(hre, wallet);
 
-    // Deploy real verifiers + InstanceManager (mirrors InstanceManagerModule)
+    // Deploy real verifiers and manager.
     const iv = await deployer.deploy(await deployer.loadArtifact("InstantiationVerifier"));
     const tv = await deployer.deploy(await deployer.loadArtifact("TransitionVerifier"));
     const rv = await deployer.deploy(await deployer.loadArtifact("TerminationVerifier"));
@@ -30,13 +30,13 @@ describe("InstanceManager (zkSync ERA)", function () {
       [await iv.getAddress(), await tv.getAddress(), await rv.getAddress()]);
     instanceManager = im;
 
-    // Log deployment gas
+    // Capture deployment gas.
     deployGas["InstantiationVerifier"] = (await iv.deploymentTransaction()!.wait())!.gasUsed;
     deployGas["TransitionVerifier"]    = (await tv.deploymentTransaction()!.wait())!.gasUsed;
     deployGas["TerminationVerifier"]   = (await rv.deploymentTransaction()!.wait())!.gasUsed;
     deployGas["InstanceManager"]       = (await im.deploymentTransaction()!.wait())!.gasUsed;
 
-    // Deploy mock manager (mirrors InstanceManagerWithMockModule)
+    // Deploy a mock-backed manager for the cheaper paths.
     const mock = await deployer.deploy(await deployer.loadArtifact("InstantiationVerifierMock"));
     const mm   = await deployer.deploy(await deployer.loadArtifact("InstanceManager"),
       [await mock.getAddress(), await tv.getAddress(), await rv.getAddress()]);
@@ -55,7 +55,7 @@ describe("InstanceManager (zkSync ERA)", function () {
   it("termination", async function () {
     this.timeout(60_000);
     const p = proofs[proofs.length - 1];
-    // Use mock for instantiation (mirrors L1 test)
+    // Use the mock manager for setup, same as the L1 test.
     await (await mockManager.instantiate(p.value, p.input[0])).wait();
     const tx = await mockManager.terminate(p.value, p.input[0]);
     const r  = await tx.wait();

@@ -1,16 +1,15 @@
 package prover
 
-// TimingJson is the JSON representation of ProofTiming.
-// WitnessMs = frontend.NewWitness duration.
-// ProofMs   = groth16.Prove duration.
+// TimingJson is the JSON form of ProofTiming.
+// WitnessMs is time spent in frontend.NewWitness.
+// ProofMs is time spent in groth16.Prove.
 type TimingJson struct {
 	WitnessMs float64 `json:"witnessMs"`
 	ProofMs   float64 `json:"proofMs"`
 }
 
-// ProofJson is the JSON representation of a Proof.
-// The Timing field is additive – existing consumers that only read Value/Input
-// (e.g. Hardhat tests) continue to work without changes.
+// ProofJson is the JSON form of Proof.
+// Timing is additive, so readers that only use Value/Input still work.
 type ProofJson struct {
 	Value  [8]string  `json:"value"`
 	Input  []string   `json:"input"`

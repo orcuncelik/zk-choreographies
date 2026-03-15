@@ -1,25 +1,7 @@
 #!/usr/bin/env python3
-"""
-run_choreography.py
+"""Run a choreography end to end.
 
-Generic one-click runner for ANY ZK Choreography end-to-end.
-Modular Python port of run_choreography.sh (which remains untouched).
-
-Usage:
-    python3 run_choreography.py <bpmn-file> [OPTIONS]
-
-Arguments:
-    <bpmn-file>           Path to BPMN file (relative to project root)
-
-Options:
-    --e2e <script>        E2E Python script to run
-    --l1-test <file>      L1 Ethereum Hardhat test file
-    --zksync-test <file>  zkSync ERA Hardhat test file
-    --name <name>         Override display name
-    --clean               Delete cached proving keys (force recompile)
-    --skip-zksync         Skip zkSync ERA gas tests
-    --skip-gas            Skip all Hardhat gas tests
-    --no-rebuild          Skip go build and npm install
+Builds the services, runs the E2E script, collects gas data, and writes a report.
 """
 
 import argparse
@@ -37,9 +19,7 @@ from pathlib import Path
 from typing import Optional
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # Configuration
-# ═══════════════════════════════════════════════════════════════════════════════
 
 ROOT = Path(__file__).resolve().parent
 BPMN_DIR = ROOT / "bpmn-service"
@@ -59,9 +39,7 @@ ZKSYNC_LOG = LOG_DIR / "zk-zksync-hardhat.log"
 REPORT_PATH = LOG_DIR / "zk-choreography-report.txt"
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# ANSI output helpers
-# ═══════════════════════════════════════════════════════════════════════════════
+# Output helpers
 
 RED = "\033[0;31m"
 GREEN = "\033[0;32m"
@@ -105,31 +83,27 @@ def header(title: str):
     print(f"{BOLD}{CYAN}+{line}+{RESET}")
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# Name conversion
-# ═══════════════════════════════════════════════════════════════════════════════
+# Name helpers
 
 def to_snake(name: str) -> str:
-    """'supply-chain' or 'Supply_Chain' -> 'supply_chain'"""
+    """Convert a name to snake_case."""
     return name.replace("-", "_").lower()
 
 
 def to_pascal(name: str) -> str:
-    """'supply-chain' -> 'SupplyChain'"""
+    """Convert a name to PascalCase."""
     return "".join(part.capitalize() for part in re.split(r"[-_]", name) if part)
 
 
 def to_display(name: str) -> str:
-    """'supply-chain' -> 'Supply Chain'"""
+    """Convert a slug to title case."""
     return " ".join(part.capitalize() for part in re.split(r"[-_]", name) if part)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # Auto-discovery
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def discover_file(candidates: list[Path]) -> Optional[Path]:
-    """Return the first candidate path that exists, or None."""
+    """Return the first existing candidate."""
     for c in candidates:
         if c.is_file():
             return c
@@ -159,7 +133,7 @@ def discover_zksync_test(pascal: str) -> Optional[Path]:
 
 
 def detect_proofs_json(test_file: Path) -> Optional[str]:
-    """Extract proofs JSON relative path from a test file."""
+    """Read the proofs JSON path from a test file."""
     try:
         text = test_file.read_text()
         m = re.search(r"test/[^'\"]*\.json", text)
@@ -168,12 +142,10 @@ def detect_proofs_json(test_file: Path) -> Optional[str]:
         return None
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# anvil-zksync binary discovery
-# ═══════════════════════════════════════════════════════════════════════════════
+# anvil-zksync discovery
 
 def find_anvil_zksync() -> Optional[Path]:
-    """Find the highest-version anvil-zksync binary under the hardhat cache."""
+    """Find the newest cached anvil-zksync binary."""
     zk_dir = Path.home() / ".cache" / "hardhat-nodejs" / "zksync-memory-node"
     if not zk_dir.is_dir():
         return None
@@ -187,15 +159,13 @@ def find_anvil_zksync() -> Optional[Path]:
     return versions[-1]
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# Process management
-# ═══════════════════════════════════════════════════════════════════════════════
+# Process helpers
 
 _background_processes: list[subprocess.Popen] = []
 
 
 def _cleanup():
-    """Kill all background processes started by this script."""
+    """Stop background processes started by this script."""
     for proc in _background_processes:
         try:
             proc.kill()
@@ -210,7 +180,7 @@ signal.signal(signal.SIGTERM, lambda *_: sys.exit(1))
 
 
 def start_background(cmd: list[str], log_path: Path, cwd: Path, label: str) -> subprocess.Popen:
-    """Start a process in the background, redirect output to log_path."""
+    """Start a background process and write output to a log file."""
     log_fh = open(log_path, "w")
     proc = subprocess.Popen(cmd, stdout=log_fh, stderr=subprocess.STDOUT, cwd=cwd)
     _background_processes.append(proc)
@@ -219,7 +189,7 @@ def start_background(cmd: list[str], log_path: Path, cwd: Path, label: str) -> s
 
 
 def wait_for_http(url: str, name: str, max_seconds: int = 120):
-    """Poll a URL until it responds, or die after max_seconds."""
+    """Wait for an HTTP endpoint to respond."""
     log(f"Waiting for {name}...")
     for i in range(1, max_seconds + 1):
         try:
@@ -235,7 +205,7 @@ def wait_for_http(url: str, name: str, max_seconds: int = 120):
 
 
 def free_port(port: int):
-    """Kill any process listening on the given port."""
+    """Kill the process using a port, if any."""
     result = subprocess.run(["lsof", "-ti", f"tcp:{port}"], capture_output=True, text=True)
     pids = result.stdout.strip()
     if pids:
@@ -247,9 +217,7 @@ def free_port(port: int):
         ok(f"Port {port} is free")
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # Build helpers
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def build_execution_service():
     log("go build...")
@@ -267,58 +235,31 @@ def install_bpmn_deps():
     ok("Dependencies up to date")
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # Log parsing
-# ═══════════════════════════════════════════════════════════════════════════════
 
 @dataclass
 class ZkTimingMetrics:
-    """Off-chain ZK timing metrics collected from service and e2e logs.
-
-    Four distinct phases are measured:
-
-    1. COMPILE (one-time, cached to disk)
-       gnark frontend compiles the circuit definition (Go structs) into an R1CS
-       constraint system. Only runs when no cached .constraint_system file exists.
-       Measured from: execution-service log "TIMING compile <circuit>"
-
-    2. SETUP (one-time, cached to disk)
-       Groth16 trusted setup over the R1CS: generates the proving key (pk) and
-       verification key (vk). Only runs when no cached .proving_key file exists.
-       This is the most expensive one-time cost (~5-10s per circuit).
-       Measured from: execution-service log "TIMING setup <circuit>"
-
-    3. WITNESS (per proof, negligible ~0.2-0.3 ms)
-       Constructs the full witness (public + private inputs) for a specific proof
-       request. Runs every time a proof is generated but takes <0.1% of proof time.
-       Measured from: e2e output or API response proof.timing.witnessMs
-
-    4. PROOF (per proof, dominant cost ~950-1460 ms)
-       Groth16 prover computes the ZK proof from the witness and proving key.
-       This is the main per-transaction computational cost.
-       Measured from: e2e output or API response proof.timing.proofMs
-    """
-    # Phase 1: Compile (one-time) — circuit definition -> R1CS constraint system
+    """Compile/setup and per-proof timing pulled from logs."""
+    # One-time circuit build
     compile_inst: str = ""
     compile_trans: str = ""
     compile_term: str = ""
-    # Phase 2: Setup (one-time) — R1CS -> proving key + verification key (Groth16)
     setup_inst: str = ""
     setup_trans: str = ""
     setup_term: str = ""
-    # Phase 3: Witness (per proof) — public/private inputs -> full witness assignment
+    # Per-proof witness time
     inst_witness: str = ""
     term_witness: str = ""
     avg_witness: str = ""
-    # Phase 4: Proof (per proof) — witness + proving key -> Groth16 proof
+    # Per-proof prove time
     inst_proof: str = ""
     term_proof: str = ""
     avg_proof: str = ""
-    # Total wall-clock time per proof (includes HTTP overhead)
+    # End-to-end time per proof
     inst_total: str = ""
     term_total: str = ""
     avg_total: str = ""
-    # Constraint counts (from execution-service log at startup)
+    # Constraint counts
     constraints_inst: str = ""
     constraints_trans: str = ""
     constraints_term: str = ""
@@ -346,8 +287,7 @@ def parse_zk_timing(exec_log: Path, e2e_log: Path) -> ZkTimingMetrics:
     m.setup_trans = _svc_ms("TIMING setup transition")
     m.setup_term = _svc_ms("TIMING setup termination")
 
-    # Parse constraint counts from execution-service log.
-    # Format: "Instantiation constraint system has 107707 constraints"
+    # Constraint counts from the execution-service log.
     try:
         for line in exec_log.read_text().splitlines():
             cm = re.search(r"(\w+) constraint system has (\d+) constraints", line)
@@ -368,12 +308,8 @@ def parse_zk_timing(exec_log: Path, e2e_log: Path) -> ZkTimingMetrics:
     except OSError:
         return m
 
-    # Enhanced format from supply_chain_e2e.py per-proof table.
-    # Columns: Step  Compile  Setup  Witness(ms)  Proof(ms)  Total(s)
-    #          [0]   [1]      [2]    [-3]         [-2]       [-1]
-    #
-    # IMPORTANT: parts[-3]=witness, parts[-2]=proof, parts[-1]=total.
-    # Previously this was wrong (parts[-2] was assigned to witness, parts[-1] to proof).
+    # Per-proof table from supply_chain_e2e.py.
+    # parts[-3]=witness, parts[-2]=proof, parts[-1]=total.
     for line in e2e_text.splitlines():
         stripped = line.strip()
         if re.match(r"instantiation\s+N/A", stripped):
@@ -395,7 +331,7 @@ def parse_zk_timing(exec_log: Path, e2e_log: Path) -> ZkTimingMetrics:
                 m.avg_proof = parts[-2]
                 m.avg_total = parts[-1]
 
-    # Fallback: simple "Proof generated in X.XXs" lines (weber_e2e.py format)
+    # Fallback for simpler e2e output.
     if not m.inst_proof:
         proof_times = re.findall(r"Proof generated in ([0-9]+\.[0-9]+)s", e2e_text)
         if proof_times:
@@ -431,7 +367,7 @@ class GasMetrics:
     term_calldata: str = ""
     term_inputs: str = ""
     term_writes: str = ""
-    # Contract bytecode sizes
+    # Bytecode sizes
     bytes_iv: str = ""
     bytes_tv: str = ""
     bytes_rv: str = ""
@@ -457,7 +393,7 @@ class GasMetrics:
 
 @dataclass
 class ArtifactFile:
-    """Single generated/cached artifact written by the local toolchain."""
+    """One generated or cached artifact."""
     label: str
     path: Path
     size_bytes: int
@@ -465,13 +401,13 @@ class ArtifactFile:
 
 @dataclass
 class ArtifactMetrics:
-    """Inventory of generated/cached ZK artifacts on disk."""
+    """Generated and cached ZK artifacts on disk."""
     files: list[ArtifactFile] = field(default_factory=list)
     total_bytes: int = 0
 
 
 def _parse_field(log_text: str, key: str) -> str:
-    """Parse a 'key: value' line from log output, extracting digits."""
+    """Read digits from a `key: value` log line."""
     for line in log_text.splitlines():
         if f"  {key}:" in line:
             parts = line.split(": ", 1)
@@ -483,7 +419,7 @@ def _parse_field(log_text: str, key: str) -> str:
 
 
 def _parse_deploy_gas_from_table(log_text: str, contract_name: str, exclude: str = "NOMATCH") -> str:
-    """Parse deployment gas from hardhat gas-reporter Deployments table."""
+    """Read deployment gas from the gas-reporter table."""
     ansi_re = re.compile(r"\x1b\[[0-9;]*m")
     in_deployments = False
     for raw in log_text.splitlines():
@@ -516,7 +452,7 @@ def fmt_bytes_human(size_bytes: int) -> str:
 
 
 def collect_artifact_metrics(proofs_abs: Path) -> ArtifactMetrics:
-    """Collect the generated/cached artifact files relevant to a benchmark run."""
+    """Collect run artifacts from disk."""
     specs = [
         ("Instantiation CS", PUBLIC_DIR / "instantiation.constraint_system"),
         ("Transition CS", PUBLIC_DIR / "transition.constraint_system"),
@@ -555,7 +491,7 @@ def parse_l1_gas(log_path: Path) -> GasMetrics:
 
     g.ran = True
 
-    # Per-call gas from console.log lines (exclude table rows with │)
+    # Console log gas lines, not the summary table.
     for line in text.splitlines():
         clean = line
         if "│" in clean:
@@ -606,7 +542,7 @@ def parse_l1_gas(log_path: Path) -> GasMetrics:
     g.deploy_rv_fee = _parse_field(text, "l1-deploy-rv-fee")
     g.deploy_im_fee = _parse_field(text, "l1-deploy-im-fee")
 
-    # Fallback: parse from gas-reporter Deployments table
+    # Fallback to the gas-reporter Deployments table.
     if not g.deploy_im:
         g.deploy_im = _parse_deploy_gas_from_table(text, "InstanceManager", "Verifier|Mock")
     if not g.deploy_iv:
@@ -632,7 +568,7 @@ def parse_zksync_gas(log_path: Path) -> GasMetrics:
 
     g.ran = True
 
-    # Per-call gas from receipt-based summary table
+    # Receipt summary table.
     for line in text.splitlines():
         if "│  instantiate (real)" in line:
             nums = re.findall(r"[0-9]{5,}", line)
@@ -684,7 +620,7 @@ def parse_zksync_gas(log_path: Path) -> GasMetrics:
     g.deploy_rv = _parse_field(text, "zksync-deploy-rv-gas")
     g.deploy_im = _parse_field(text, "zksync-deploy-im-gas")
 
-    # Fallback: parse from deployments table
+    # Fallback to the deployments table.
     if not all([g.deploy_iv, g.deploy_tv, g.deploy_rv, g.deploy_im]):
         if not g.deploy_iv:
             g.deploy_iv = _parse_deploy_gas_from_table(text, "InstantiationVerifier")
@@ -698,27 +634,25 @@ def parse_zksync_gas(log_path: Path) -> GasMetrics:
     return g
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# Network data (ETH price, gas prices)
-# ═══════════════════════════════════════════════════════════════════════════════
+# Network data
 
 @dataclass
 class ZkSyncFeeEstimate:
-    """Fee estimate from zks_estimateFee for a single operation."""
-    gas_limit: str = ""            # gas_limit from zks_estimateFee (base cost, no contract exec)
-    max_fee_per_gas_wei: str = ""  # max_fee_per_gas in wei
-    gas_per_pubdata: str = ""      # gas_per_pubdata_limit
+    """zks_estimateFee output for one operation."""
+    gas_limit: str = ""            # Base gas from zks_estimateFee.
+    max_fee_per_gas_wei: str = ""  # max_fee_per_gas in wei.
+    gas_per_pubdata: str = ""      # gas_per_pubdata_limit.
 
 
 @dataclass
 class NetworkData:
     eth_usd: str = ""
     l1_gas_price_gwei: str = ""
-    # zkSync: authoritative gas price from zks_estimateFee (preferred over eth_gasPrice)
+    # Prefer zks_estimateFee over eth_gasPrice for zkSync.
     zksync_gas_price_gwei: str = ""
-    zksync_max_fee_per_gas_wei: str = ""  # raw wei from zks_estimateFee
-    zksync_gas_per_pubdata: str = ""      # gas_per_pubdata_limit
-    # Per-operation estimates from zks_estimateFee
+    zksync_max_fee_per_gas_wei: str = ""  # Raw wei from zks_estimateFee.
+    zksync_gas_per_pubdata: str = ""      # gas_per_pubdata_limit.
+    # Per-operation estimates
     zksync_est_inst: Optional[ZkSyncFeeEstimate] = None
     zksync_est_trans: Optional[ZkSyncFeeEstimate] = None
     zksync_est_term: Optional[ZkSyncFeeEstimate] = None
@@ -739,28 +673,28 @@ def _hex_to_dec(hex_str: str) -> str:
     return str(int(hex_str, 16))
 
 
-# ── ABI encoding helpers ─────────────────────────────────────────────────────
+# ABI helpers
 
-# Function selectors (keccak256 of canonical signature, first 4 bytes)
+# 4-byte function selectors
 _SEL_INSTANTIATE = "5ebd9ab7"   # instantiate(uint256[8],uint256)
 _SEL_TRANSITION  = "74ff1fcc"   # transition(uint256[8],uint256,uint256)
 _SEL_TERMINATE   = "5432beb7"   # terminate(uint256[8],uint256)
 
-# Well-known funded address for fee estimation (vitalik.eth)
+# Funded address used for fee estimation
 _ESTIMATOR_FROM = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045"
-# Dummy target (no contract here; zks_estimateFee still returns gas pricing)
+# Dummy target; zks_estimateFee still returns pricing
 _ESTIMATOR_TO   = "0x0000000000000000000000000000000000000002"
 
 ZKSYNC_MAINNET_RPC = "https://mainnet.era.zksync.io"
 
 
 def _abi_encode_uint256(n: int) -> str:
-    """Encode a uint256 as 64 hex chars (32 bytes, zero-padded)."""
+    """Encode a uint256 as 32 bytes of hex."""
     return f"{n:064x}"
 
 
 def _build_calldata(selector: str, proof: list[str], inputs: list[str]) -> str:
-    """Build hex-encoded calldata (no 0x prefix) for a contract call."""
+    """Build calldata without the 0x prefix."""
     parts = [selector]
     for elem in proof:
         parts.append(_abi_encode_uint256(int(elem)))
@@ -770,7 +704,7 @@ def _build_calldata(selector: str, proof: list[str], inputs: list[str]) -> str:
 
 
 def _call_zks_estimate_fee(calldata_hex: str) -> Optional[ZkSyncFeeEstimate]:
-    """Call zks_estimateFee on zkSync mainnet and parse the result."""
+    """Call zks_estimateFee on zkSync mainnet."""
     payload = json.dumps({
         "jsonrpc": "2.0",
         "method": "zks_estimateFee",
@@ -806,13 +740,7 @@ def estimate_zksync_fees(proofs_path: Path) -> tuple[
     Optional[ZkSyncFeeEstimate],
     Optional[ZkSyncFeeEstimate],
 ]:
-    """Call zks_estimateFee on zkSync mainnet with real calldata from proofs JSON.
-
-    Returns (inst_est, trans_est, term_est).  Each may be None on failure.
-    Note: gas_limit from zks_estimateFee is the BASE cost (calldata + intrinsic),
-    not the full execution cost (no contract at the dummy address).
-    The authoritative value is max_fee_per_gas (mainnet gas price).
-    """
+    """Estimate zkSync fees with calldata built from the proofs JSON."""
     try:
         proofs = json.loads(proofs_path.read_text())
     except Exception:
@@ -821,7 +749,7 @@ def estimate_zksync_fees(proofs_path: Path) -> tuple[
     if len(proofs) < 3:
         return None, None, None
 
-    # Proof 0 = instantiation (1 input), Proof 1 = transition (2 inputs), last = termination (1 input)
+    # proofs[0]=instantiate, proofs[1]=transition, proofs[-1]=terminate
     p_inst = proofs[0]
     p_trans = proofs[1]
     p_term = proofs[-1]
@@ -846,7 +774,7 @@ def estimate_zksync_fees(proofs_path: Path) -> tuple[
 
 
 def fetch_network_data(proofs_path: Optional[Path] = None) -> NetworkData:
-    """Fetch live ETH price, L1 gas price, and zkSync fee estimates."""
+    """Fetch ETH price plus L1 and zkSync gas data."""
     log("Fetching live ETH price and mainnet gas prices...")
     nd = NetworkData()
 
@@ -866,7 +794,7 @@ def fetch_network_data(proofs_path: Optional[Path] = None) -> NetworkData:
     except Exception:
         warn("ETH price fetch failed")
 
-    # L1 gas price (Ethereum mainnet)
+    # L1 gas price
     try:
         r = subprocess.run(
             ["curl", "-s", "--max-time", "8", "-X", "POST",
@@ -884,13 +812,13 @@ def fetch_network_data(proofs_path: Optional[Path] = None) -> NetworkData:
     except Exception:
         warn("L1 gas price fetch failed")
 
-    # zkSync: use zks_estimateFee with real proof calldata for authoritative pricing
+    # Prefer zks_estimateFee with real proof calldata.
     if proofs_path and proofs_path.is_file():
         est_inst, est_trans, est_term = estimate_zksync_fees(proofs_path)
         nd.zksync_est_inst = est_inst
         nd.zksync_est_trans = est_trans
         nd.zksync_est_term = est_term
-        # Use max_fee_per_gas from the estimate as the authoritative zkSync gas price
+        # Use max_fee_per_gas as the zkSync gas price.
         if est_inst and est_inst.max_fee_per_gas_wei:
             wei = int(est_inst.max_fee_per_gas_wei)
             nd.zksync_max_fee_per_gas_wei = est_inst.max_fee_per_gas_wei
@@ -898,7 +826,7 @@ def fetch_network_data(proofs_path: Optional[Path] = None) -> NetworkData:
             nd.zksync_gas_per_pubdata = est_inst.gas_per_pubdata
             ok(f"zkSync gas price (from zks_estimateFee): {nd.zksync_gas_price_gwei} gwei")
     else:
-        # Fallback: use eth_gasPrice from zkSync mainnet
+        # Fall back to eth_gasPrice on zkSync mainnet.
         try:
             r = subprocess.run(
                 ["curl", "-s", "--max-time", "8", "-X", "POST",
@@ -920,9 +848,7 @@ def fetch_network_data(proofs_path: Optional[Path] = None) -> NetworkData:
     return nd
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# Report formatting helpers
-# ═══════════════════════════════════════════════════════════════════════════════
+# Report helpers
 
 def fmt_gas(n: str) -> str:
     """Format a gas number with comma separators, or return as-is."""
@@ -942,10 +868,7 @@ def calc_usd_wei(wei: str, eth_usd: str) -> str:
 
 
 def calc_mainnet_fee_wei(gas_used: str, gas_price_gwei: str = "", gas_price_wei: str = "") -> str:
-    """Compute fee in wei from gas units and mainnet gas price.
-
-    Prefers gas_price_wei (exact) over gas_price_gwei (float conversion).
-    """
+    """Compute a fee in wei from gas used and gas price."""
     if not gas_used:
         return ""
     try:
@@ -973,9 +896,7 @@ def safe_ratio(a: str, b: str) -> str:
         return "N/A"
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# Metadata collection
-# ═══════════════════════════════════════════════════════════════════════════════
+# Metadata
 
 @dataclass
 class Metadata:
@@ -990,7 +911,7 @@ class Metadata:
     cpu_model: str = "?"
     ram_gb: str = "?"
     os_version: str = "?"
-    # Circuit parameter set
+    # Circuit limits
     circuit_factor: str = "?"
     max_places: str = "?"
     max_participants: str = "?"
@@ -1040,7 +961,7 @@ def collect_metadata() -> Metadata:
         if len(versions) > 1:
             md.zksolc_ver = versions[1]
 
-    # Hardware detection (macOS)
+    # Hardware (macOS)
     try:
         out = subprocess.run(["sysctl", "-n", "machdep.cpu.brand_string"],
                              capture_output=True, text=True).stdout.strip()
@@ -1061,7 +982,7 @@ def collect_metadata() -> Metadata:
     except Exception:
         pass
 
-    # Circuit parameter set from domain/model.go
+    # Circuit limits from domain/model.go
     model_go = EXEC_DIR / "domain" / "model.go"
     if model_go.is_file():
         text = model_go.read_text()
@@ -1078,7 +999,7 @@ def collect_metadata() -> Metadata:
             if cm:
                 setattr(md, attr, cm.group(1))
             else:
-                # Compute from base * factor if no inline comment
+                # Fall back to base * factor.
                 bm = re.search(rf"const\s+Base{const_name.removeprefix('Max')}\s*=\s*(\d+)", text)
                 if bm and md.circuit_factor.isdigit():
                     setattr(md, attr, str(int(bm.group(1)) * int(md.circuit_factor)))
@@ -1086,9 +1007,7 @@ def collect_metadata() -> Metadata:
     return md
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # Report generation
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def generate_report(
     display_name: str,
@@ -1107,7 +1026,7 @@ def generate_report(
     """Generate the final report as a string."""
     SEP = "=" * 72
     lines: list[str] = []
-    p = lines.append  # shorthand
+    p = lines.append
 
     p(SEP)
     p(f"  ZK CHOREOGRAPHY REPORT: {display_name}")
@@ -1116,7 +1035,7 @@ def generate_report(
     p(SEP)
     p("")
 
-    # A. Experiment Metadata
+    # Metadata
     p("  +-- A. Experiment Metadata ---------------------------------------+")
     p("  |")
     p(f"  |  {'Date':<26}  {time.strftime('%Y-%m-%d %H:%M:%S UTC')}")
@@ -1163,7 +1082,7 @@ def generate_report(
     p("  +------------------------------------------------------------------+")
     p("")
 
-    # B. On-Chain Deployment
+    # Deployments
     if l1.ran or zk.ran:
         p("  +-- B. On-Chain Deployment ----------------------------------------+")
         p("  |")
@@ -1195,7 +1114,7 @@ def generate_report(
         p("  +------------------------------------------------------------------+")
         p("")
 
-    # C. On-Chain Execution
+    # Execution
     if (l1.ran and l1.gas_inst) or (zk.ran and zk.gas_inst):
         p("  +-- C. On-Chain Execution ----------------------------------------+")
         p("  |")
@@ -1228,7 +1147,7 @@ def generate_report(
         p("  +------------------------------------------------------------------+")
         p("")
 
-    # D. Off-Chain ZK Workload
+    # ZK workload
     p("  +-- D. Off-Chain ZK Workload -------------------------------------+")
     p("  |")
     p("  |  Four phases of ZK proof generation:")
@@ -1292,7 +1211,7 @@ def generate_report(
     p("  +------------------------------------------------------------------+")
     p("")
 
-    # E. Aggregates and Statistics
+    # Aggregates
     p("  +-- E. Aggregates and Statistics ---------------------------------+")
     p("  |")
     if l1.ran and l1.gas_inst and zk.ran and zk.gas_inst:
@@ -1322,7 +1241,7 @@ def generate_report(
         p(f"  |  Gas units: zkSync ~{r_inst}x higher per call (optimizer disabled on both)")
         p("  |  Note: gas units != cost; actual ETH fee = gasUsed x network gas price")
 
-        # Helper: pick best gas price source for each chain
+        # Pick the best gas price source for each chain.
         l1_gp_gwei = nd.l1_gas_price_gwei
         zk_gp_wei = nd.zksync_max_fee_per_gas_wei  # from zks_estimateFee (precise)
         zk_gp_gwei = nd.zksync_gas_price_gwei       # fallback
@@ -1401,7 +1320,7 @@ def generate_report(
     p("  +------------------------------------------------------------------+")
     p("")
 
-    # Log files
+    # Logs
     p("  +-- Log Files ----------------------------------------------------+")
     p(f"  |  {'execution-service:':<22} {EXEC_LOG}")
     p(f"  |  {'bpmn-service:':<22} {BPMN_LOG}")
@@ -1422,12 +1341,10 @@ def generate_report(
     return "\n".join(lines)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # Pipeline steps
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def step_check_prerequisites():
-    """Step 1: Verify required commands are available."""
+    """Check required commands."""
     header("Step 1 | Prerequisites")
     for cmd in ["go", "node", "python3", "curl"]:
         path = shutil.which(cmd)
@@ -1438,14 +1355,14 @@ def step_check_prerequisites():
 
 
 def step_free_ports():
-    """Step 2: Free ports 3000, 8080, 8011."""
+    """Free the ports used by the local stack."""
     header("Step 2 | Free ports 3000 / 8080 / 8011")
     for port in [3000, 8080, 8011]:
         free_port(port)
 
 
 def step_proving_key_cache(clean: bool):
-    """Step 3: Manage proving key cache."""
+    """Manage the proving-key cache."""
     header("Step 3 | Proving key cache")
     if clean:
         for pattern in ["*.constraint_system", "*.proving_key"]:
@@ -1461,7 +1378,7 @@ def step_proving_key_cache(clean: bool):
 
 
 def step_build(no_rebuild: bool):
-    """Step 4-5: Build execution-service and install bpmn-service deps."""
+    """Build services unless --no-rebuild is set."""
     header("Step 4 | Build execution-service")
     if no_rebuild:
         ok("Skipping build (--no-rebuild)")
@@ -1487,7 +1404,7 @@ class RunningServices:
 
 
 def step_start_services(skip_zksync: bool, skip_gas: bool, zksync_test: Optional[Path]) -> RunningServices:
-    """Step 6-7: Start background services and wait for readiness."""
+    """Start services and wait for them to be ready."""
     svc = RunningServices()
 
     header("Step 6 | Start services")
@@ -1520,7 +1437,7 @@ def step_start_services(skip_zksync: bool, skip_gas: bool, zksync_test: Optional
 
 
 def step_run_e2e(e2e_script: Optional[Path]) -> tuple[bool, bool, float]:
-    """Step 8: Run E2E script. Returns (ran, ok, duration_seconds)."""
+    """Run the E2E script. Returns (ran, ok, duration_seconds)."""
     if not e2e_script:
         warn("No E2E script found -- skipping E2E phase")
         return False, False, 0.0
@@ -1533,7 +1450,7 @@ def step_run_e2e(e2e_script: Optional[Path]) -> tuple[bool, bool, float]:
             ["python3", str(e2e_script)],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         )
-        # Stream output to both terminal and log file
+        # Echo output to stdout and the log file.
         for line in proc.stdout:
             decoded = line.decode(errors="replace")
             sys.stdout.write(decoded)
@@ -1556,7 +1473,7 @@ def step_run_gas_tests(
     l1_test: Optional[Path],
     zksync_test: Optional[Path],
 ) -> tuple[GasMetrics, GasMetrics, NetworkData]:
-    """Steps 10-11: Run L1 and zkSync gas tests. Returns (l1, zksync, network_data)."""
+    """Run the L1 and zkSync gas tests."""
     l1 = GasMetrics()
     zk = GasMetrics()
     nd = NetworkData()
@@ -1609,7 +1526,7 @@ def step_run_gas_tests(
         warn("No zkSync test file found  ->  zkSync gas tests skipped")
         return l1, zk, nd
 
-    # Check port 8011
+    # Port 8011 must be reachable.
     import socket
     try:
         s = socket.create_connection(("localhost", 8011), timeout=2)
@@ -1653,9 +1570,7 @@ def step_run_gas_tests(
     return l1, zk, nd
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # Argument parsing
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -1673,33 +1588,31 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # Main
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def main():
     args = parse_args()
     t_start = time.monotonic()
 
-    # Resolve BPMN file
+    # Resolve the BPMN file.
     bpmn_path = Path(args.bpmn_file)
     if not bpmn_path.is_absolute():
         bpmn_path = ROOT / bpmn_path
     if not bpmn_path.is_file():
         die(f"BPMN file not found: {bpmn_path}")
 
-    # Derive names
+    # Derive the display names.
     basename = bpmn_path.stem  # e.g. "supply-chain"
     snake = to_snake(basename)
     pascal = to_pascal(basename)
     display_name = args.display_name or to_display(basename)
 
-    # Auto-discover components (override -> auto-discover -> None)
+    # Auto-discover related files unless the user overrides them.
     e2e_script = Path(args.e2e_script) if args.e2e_script else discover_e2e(snake)
     l1_test = Path(args.l1_test) if args.l1_test else discover_l1_test(pascal)
     zksync_test = Path(args.zksync_test) if args.zksync_test else discover_zksync_test(pascal)
 
-    # Detect proofs JSON
+    # Detect the proofs JSON path.
     if l1_test:
         proofs_rel = detect_proofs_json(l1_test) or "test/proofs.json"
     else:
@@ -1733,7 +1646,7 @@ def main():
     info(f"  Proofs JSON  : {proofs_rel} (expected at {proofs_abs})")
     print()
 
-    # Run pipeline
+    # Run the pipeline.
     step_check_prerequisites()
     step_free_ports()
     step_proving_key_cache(args.clean)
@@ -1742,11 +1655,7 @@ def main():
 
     e2e_ran, e2e_ok, e2e_duration = step_run_e2e(e2e_script)
 
-    # ZK timing metrics — four phases:
-    #   1. Compile: circuit -> R1CS (one-time, cached)
-    #   2. Setup:   R1CS -> proving/verification keys (one-time, cached)
-    #   3. Witness: inputs -> witness assignment (per proof, negligible)
-    #   4. Proof:   witness + pk -> Groth16 proof (per proof, dominant cost)
+    # Summarize compile/setup and per-proof timings.
     header("Step 9 | ZK timing metrics")
     timing = parse_zk_timing(EXEC_LOG, E2E_LOG)
 

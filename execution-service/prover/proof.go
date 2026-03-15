@@ -9,7 +9,7 @@ import (
 	"github.com/consensys/gnark/backend/groth16"
 )
 
-// ProofTiming holds per-proof phase durations in milliseconds.
+// ProofTiming stores witness and proof time in milliseconds.
 type ProofTiming struct {
 	WitnessMs float64
 	ProofMs   float64
