@@ -1,8 +1,20 @@
 package prover
 
+// TimingJson is the JSON representation of ProofTiming.
+// WitnessMs = frontend.NewWitness duration.
+// ProofMs   = groth16.Prove duration.
+type TimingJson struct {
+	WitnessMs float64 `json:"witnessMs"`
+	ProofMs   float64 `json:"proofMs"`
+}
+
+// ProofJson is the JSON representation of a Proof.
+// The Timing field is additive – existing consumers that only read Value/Input
+// (e.g. Hardhat tests) continue to work without changes.
 type ProofJson struct {
-	Value [8]string `json:"value"`
-	Input []string  `json:"input"`
+	Value  [8]string  `json:"value"`
+	Input  []string   `json:"input"`
+	Timing TimingJson `json:"timing"`
 }
 
 func (proof Proof) ToJson() ProofJson {
@@ -22,5 +34,9 @@ func (proof Proof) ToJson() ProofJson {
 			proof.Value[7].String(),
 		},
 		Input: publicInputs,
+		Timing: TimingJson{
+			WitnessMs: proof.Timing.WitnessMs,
+			ProofMs:   proof.Timing.ProofMs,
+		},
 	}
 }

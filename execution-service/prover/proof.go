@@ -9,14 +9,22 @@ import (
 	"github.com/consensys/gnark/backend/groth16"
 )
 
-type Proof struct {
-	Value [8]*big.Int
-	Input []*big.Int
+// ProofTiming holds per-proof phase durations in milliseconds.
+type ProofTiming struct {
+	WitnessMs float64
+	ProofMs   float64
 }
 
-func toProof(groth16Proof groth16.Proof, inputs ...domain.Hash) (Proof, error) {
+type Proof struct {
+	Value  [8]*big.Int
+	Input  []*big.Int
+	Timing ProofTiming
+}
+
+func toProof(groth16Proof groth16.Proof, timing ProofTiming, inputs ...domain.Hash) (Proof, error) {
 
 	var proof Proof
+	proof.Timing = timing
 
 	var buf bytes.Buffer
 	_, err := groth16Proof.WriteRawTo(&buf)

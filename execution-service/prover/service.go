@@ -4,6 +4,7 @@ import (
 	"execution-service/circuit"
 	"execution-service/parameters"
 	"fmt"
+	"time"
 
 	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark/backend/groth16"
@@ -40,15 +41,20 @@ func (service ProverService) ProveInstantiation(cmd ProveInstantiationCommand) (
 		Instance:       circuit.FromInstance(cmd.Instance),
 		Authentication: circuit.ToAuthentication(cmd.Instance, cmd.Signature),
 	}
+	t0 := time.Now()
 	witness, err := frontend.NewWitness(assignment, ecc.BN254.ScalarField())
+	witnessMs := float64(time.Since(t0).Microseconds()) / 1000.0
 	if err != nil {
 		return Proof{}, err
 	}
+	t1 := time.Now()
 	groth16Proof, err := groth16.Prove(service.proofParameters.CsInstantiation, service.proofParameters.PkInstantiation, witness)
+	proofMs := float64(time.Since(t1).Microseconds()) / 1000.0
 	if err != nil {
 		return Proof{}, err
 	}
-	return toProof(groth16Proof, cmd.Instance.SaltedHash.Hash)
+	fmt.Printf("TIMING instantiation witness=%.2fms proof=%.2fms\n", witnessMs, proofMs)
+	return toProof(groth16Proof, ProofTiming{WitnessMs: witnessMs, ProofMs: proofMs}, cmd.Instance.SaltedHash.Hash)
 }
 
 func (service ProverService) ProveTransition(cmd ProveTransitionCommand) (Proof, error) {
@@ -68,16 +74,20 @@ func (service ProverService) ProveTransition(cmd ProveTransitionCommand) (Proof,
 		RespondingParticipantAuthentication: recipientAuthentication,
 		ConditionInput:                      circuit.FromConditionInput(cmd.ConditionInput),
 	}
+	t0 := time.Now()
 	witness, err := frontend.NewWitness(assignment, ecc.BN254.ScalarField())
+	witnessMs := float64(time.Since(t0).Microseconds()) / 1000.0
 	if err != nil {
 		return Proof{}, err
 	}
+	t1 := time.Now()
 	proof, err := groth16.Prove(service.proofParameters.CsTransition, service.proofParameters.PkTransition, witness)
+	proofMs := float64(time.Since(t1).Microseconds()) / 1000.0
 	if err != nil {
 		return Proof{}, err
 	}
-
-	return toProof(proof, cmd.CurrentInstance.SaltedHash.Hash, cmd.NextInstance.SaltedHash.Hash)
+	fmt.Printf("TIMING transition witness=%.2fms proof=%.2fms\n", witnessMs, proofMs)
+	return toProof(proof, ProofTiming{WitnessMs: witnessMs, ProofMs: proofMs}, cmd.CurrentInstance.SaltedHash.Hash, cmd.NextInstance.SaltedHash.Hash)
 }
 
 func (service ProverService) ProveTermination(cmd ProveTerminationCommand) (Proof, error) {
@@ -88,13 +98,18 @@ func (service ProverService) ProveTermination(cmd ProveTerminationCommand) (Proo
 		Authentication: circuit.ToAuthentication(cmd.Instance, cmd.Signature),
 		EndPlaceProof:  circuit.ToEndPlaceProof(cmd.Model, cmd.Instance),
 	}
+	t0 := time.Now()
 	witness, err := frontend.NewWitness(assignment, ecc.BN254.ScalarField())
+	witnessMs := float64(time.Since(t0).Microseconds()) / 1000.0
 	if err != nil {
 		return Proof{}, err
 	}
+	t1 := time.Now()
 	proof, err := groth16.Prove(service.proofParameters.CsTermination, service.proofParameters.PkTermination, witness)
+	proofMs := float64(time.Since(t1).Microseconds()) / 1000.0
 	if err != nil {
 		return Proof{}, err
 	}
-	return toProof(proof, cmd.Instance.SaltedHash.Hash)
+	fmt.Printf("TIMING termination witness=%.2fms proof=%.2fms\n", witnessMs, proofMs)
+	return toProof(proof, ProofTiming{WitnessMs: witnessMs, ProofMs: proofMs}, cmd.Instance.SaltedHash.Hash)
 }

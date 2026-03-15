@@ -5,9 +5,11 @@ import (
 	"execution-service/circuit"
 	"execution-service/files"
 	"execution-service/utils"
+	"fmt"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark/backend/groth16"
@@ -75,14 +77,18 @@ func importProvingKey(cs constraint.ConstraintSystem, pkFilename string, vkFilen
 }
 
 func compileCircuit(circuit frontend.Circuit, filename string) constraint.ConstraintSystem {
+	t0 := time.Now()
 	cs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, circuit)
 	utils.PanicOnError(err)
+	fmt.Printf("TIMING compile %s %.2fms\n", filename, float64(time.Since(t0).Microseconds())/1000.0)
 	files.WritePublicFile(cs, filename)
 	return cs
 }
 
 func generateProvingKey(cs constraint.ConstraintSystem, pkFilename string, vkFilename string) groth16.ProvingKey {
+	t0 := time.Now()
 	pk, vk, err := groth16.Setup(cs)
+	fmt.Printf("TIMING setup %s %.2fms\n", pkFilename, float64(time.Since(t0).Microseconds())/1000.0)
 	utils.PanicOnError(err)
 	files.WritePublicFile(pk, pkFilename)
 	byteBuffer := new(bytes.Buffer)

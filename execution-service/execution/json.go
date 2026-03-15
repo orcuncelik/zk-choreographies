@@ -128,7 +128,7 @@ func (cmd *createInitiatingMessageCommandJson) ToExecutionCommand() (CreateIniti
 		if err != nil {
 			return CreateInitiatingMessageCommand{}, err
 		}
-	} else if md.IntegerMessage != nil {
+	} else if cmd.IntegerMessage != nil {
 		tmp := domain.IntegerType(*cmd.IntegerMessage)
 		integerMessage = &tmp
 	}

@@ -9,7 +9,7 @@ import (
 
 type IdentityId = uint
 
-const IdentityCount = 3
+const IdentityCount = 8 // Change if required
 
 type Signature struct {
 	Value     []byte

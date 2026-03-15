@@ -209,13 +209,13 @@ func (service *ExecutionService) ReceiveInitiatingMessage(cmd ReceiveInitiatingM
 	}
 	var respondingMessage *domain.Message
 	if cmd.BytesMessage != nil {
-		tmp, err := domain.NewInitiatingBytesMessage(instance, transition, cmd.BytesMessage)
+		tmp, err := domain.NewRespondingBytesMessage(instance, transition, cmd.BytesMessage)
 		if err != nil {
 			return InitiatingMessageReceivedEvent{}, err
 		}
 		respondingMessage = &tmp
 	} else if cmd.IntegerMessage != nil {
-		tmp, err := domain.NewInitiatingIntegerMessage(instance, transition, *cmd.IntegerMessage)
+		tmp, err := domain.NewRespondingIntegerMessage(instance, transition, *cmd.IntegerMessage)
 		if err != nil {
 			return InitiatingMessageReceivedEvent{}, err
 		}
